@@ -2,7 +2,15 @@
 
 use std::net::TcpListener;
 
-use zero2prod::{prisma::PrismaClient, startup::run};
+use zero2prod::{
+    configuration::get_configuration,
+    email_client::EmailClient,
+    prisma::{
+        subscriptions::{self},
+        PrismaClient,
+    },
+    startup::run,
+};
 
 pub struct TestApp {
     pub address: String,
@@ -20,7 +28,14 @@ async fn spawn_app() -> TestApp {
     let port = listener.local_addr().unwrap().port();
     let address = format!("http://127.0.0.1:{}", port);
 
-    let server = run(listener, prisma_client).expect("Failed to bind address");
+    let configuration = get_configuration().expect("Failed to read configuration.");
+    let sender_email = configuration
+        .email_client
+        .sender()
+        .expect("Invalid sender email address.");
+    let email_client = EmailClient::new(configuration.email_client.base_url, sender_email);
+
+    let server = run(listener, prisma_client, email_client).expect("Failed to bind address");
 
     let _ = tokio::spawn(server);
 
@@ -72,7 +87,7 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
 
     let saved = prisma_client
         .subscriptions()
-        .find_first(vec![])
+        .find_unique(subscriptions::email::equals("test@test.com".to_owned()))
         .exec()
         .await
         .expect("Failed to execute request.")
@@ -80,6 +95,13 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
 
     assert_eq!(saved.email, "test@test.com");
     assert_eq!(saved.name, "test");
+
+    let _ = prisma_client
+        .subscriptions()
+        .delete(subscriptions::id::equals(saved.id))
+        .exec()
+        .await
+        .expect("Failed to execute request.");
 }
 
 #[tokio::test]
