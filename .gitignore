@@ -2,3 +2,8 @@
 
 src/prisma.rs
 
+.env
+
+configuration/production.yaml
+configuration/local.yaml
+
