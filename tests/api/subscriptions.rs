@@ -1,72 +1,6 @@
-//! tests/health-check.rs
+use zero2prod::prisma::subscriptions;
 
-use std::net::TcpListener;
-
-use zero2prod::{
-    configuration::get_configuration,
-    email_client::EmailClient,
-    prisma::{
-        subscriptions::{self},
-        PrismaClient,
-    },
-    startup::run,
-};
-
-pub struct TestApp {
-    pub address: String,
-    pub prisma_client: PrismaClient,
-}
-
-async fn sapwn_prisma() -> PrismaClient {
-    PrismaClient::_builder().build().await.unwrap()
-}
-
-async fn spawn_app() -> TestApp {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind to random port.");
-    let prisma_client = sapwn_prisma().await;
-
-    let port = listener.local_addr().unwrap().port();
-    let address = format!("http://127.0.0.1:{}", port);
-
-    let configuration = get_configuration().expect("Failed to read configuration.");
-    let sender_email = configuration
-        .email_client
-        .sender()
-        .expect("Invalid sender email address.");
-    let email_client = EmailClient::new(
-        configuration.email_client.base_url,
-        sender_email,
-        configuration.email_client.authorization_token,
-    );
-
-    let server = run(listener, prisma_client, email_client).expect("Failed to bind address");
-
-    let _ = tokio::spawn(server);
-
-    TestApp {
-        address,
-        prisma_client: sapwn_prisma().await,
-    }
-}
-
-#[tokio::test]
-async fn health_check_works() {
-    // Arrange
-    let app = spawn_app().await;
-
-    let client = reqwest::Client::new();
-
-    // Act
-    let response = client
-        .get(format!("{}/health_check", &app.address))
-        .send()
-        .await
-        .expect("Failed to execute request.");
-
-    //Assert
-    assert!(response.status().is_success());
-    assert_eq!(Some(0), response.content_length());
-}
+use crate::helpers::{sapwn_prisma, spawn_app};
 
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
@@ -137,16 +71,3 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
         );
     }
 }
-
-// #[tokio::test]
-// async fn clean_up() {
-//     let app = spawn_app().await;
-//     let prisma_client = sapwn_prisma().await;
-//
-//     let _ = prisma_client
-//         .subscriptions()
-//         .delete_many(vec![])
-//         .exec()
-//         .await
-//         .expect("Failed to execute request.");
-// }
