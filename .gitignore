@@ -7,3 +7,4 @@ src/prisma.rs
 configuration/production.yaml
 configuration/local.yaml
 
+.DS_STORE

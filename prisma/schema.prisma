@@ -14,5 +14,14 @@ model Subscriptions {
   id            String   @id @default(cuid())
   email         String   @unique
   name          String
+  status        String
   subscribed_at DateTime @default(now())
+
+  SubscriptionTokens SubscriptionTokens[]
+}
+
+model SubscriptionTokens {
+  subscription_token String        @id @default(cuid())
+  subscriber_id      String
+  subscriber         Subscriptions @relation(fields: [subscriber_id], references: [id])
 }

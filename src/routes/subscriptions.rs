@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::{
     domain::{NewSubscriber, SubscriberEmail, SubscriberName},
+    email_client::EmailClient,
     prisma::{subscriptions::Data, PrismaClient},
 };
 
@@ -31,7 +32,7 @@ pub fn parse_subscriber(form: FormData) -> Result<NewSubscriber, String> {
 
 #[tracing::instrument(
     name = "Adding a new subscriber",
-    skip(form, prisma_client),
+    skip(form, prisma_client,email_client),
     fields(
         request_id = %Uuid::new_v4(),
         subscriber_email = %form.email,
@@ -41,16 +42,34 @@ pub fn parse_subscriber(form: FormData) -> Result<NewSubscriber, String> {
 pub async fn subscribe(
     form: web::Form<FormData>,
     prisma_client: web::Data<PrismaClient>,
+    email_client: web::Data<EmailClient>,
 ) -> HttpResponse {
     let new_subscriber = match form.0.try_into() {
         Ok(form) => form,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    match insert_subscriber(&new_subscriber, &prisma_client).await {
-        Ok(_) => HttpResponse::Ok().finish(),
-        Err(_) => HttpResponse::InternalServerError().finish(),
+    if insert_subscriber(&new_subscriber, &prisma_client)
+        .await
+        .is_err()
+    {
+        return HttpResponse::InternalServerError().finish();
     }
+
+    if email_client
+        .send_email(
+            new_subscriber.email,
+            "Welcome!",
+            "Welcome to our newsletter!",
+            "Welcome to our newsletter!",
+        )
+        .await
+        .is_err()
+    {
+        return HttpResponse::InternalServerError().finish();
+    }
+
+    HttpResponse::Ok().finish()
 }
 
 #[tracing::instrument(
@@ -66,6 +85,7 @@ pub async fn insert_subscriber(
         .create(
             new_subscriber.email.as_ref().to_owned(),
             new_subscriber.name.as_ref().to_owned(),
+            "confirmed".to_owned(),
             vec![],
         )
         .exec()
